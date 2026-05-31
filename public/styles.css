@@ -1,0 +1,87 @@
+:root {
+	interpolate-size: allow-keywords;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	font-family: system-ui, sans-serif;
+	background: #f0f0f0;
+	display: flex;
+}
+
+scroll-pane {
+	width: 240px;
+	height: 100vh;
+	background: #1e1e2e;
+}
+
+main {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+details {
+	display: relative;
+}
+
+details > summary {
+	height: 40px;
+	display: flex;
+	align-items: center;
+	padding: 0 16px;
+	font-size: 13px;
+	color: #cdd6f4;
+	background: #1e1e2e;
+	cursor: pointer;
+	user-select: none;
+}
+
+details > summary:hover {
+	background: #313244;
+}
+
+details[open] > summary {
+	position: sticky;
+	top: 0;
+	color: #cba6f7;
+}
+
+.nav-item {
+	height: 40px;
+	display: flex;
+	align-items: center;
+	padding: 0 32px;
+	font-size: 13px;
+	color: #a6adc8;
+	cursor: pointer;
+	user-select: none;
+}
+
+.nav-item:hover {
+	background: #313244;
+}
+
+scroll-pane::part(scroll-container)::-webkit-scrollbar {
+	display: none;
+}
+
+details::details-content {
+	overflow: hidden;
+	height: 0;
+	transition:
+		height 300ms ease,
+		content-visibility 300ms allow-discrete;
+}
+
+details[open]::details-content {
+	height: auto;
+}
