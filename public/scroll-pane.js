@@ -36,6 +36,8 @@ class ScrollPane extends HTMLElement {
 	#loopUntil = 0;
 	#hovered = false;
 
+	#resizeObserver = null;
+
 	constructor() {
 		super();
 		this.attachShadow({ mode: "open" });
@@ -43,6 +45,7 @@ class ScrollPane extends HTMLElement {
 		this.#container = this.shadowRoot.querySelector(".scroll-container");
 		this.#content = this.shadowRoot.querySelector(".scroll-content");
 		this.#slot = this.shadowRoot.querySelector("slot");
+		this.#resizeObserver = new ResizeObserver(this.#onResize);
 	}
 
 	connectedCallback() {
@@ -61,23 +64,49 @@ class ScrollPane extends HTMLElement {
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 	}
 
-	#onSlotChange = () => {
+	#onResize = () => {
+		console.log("ResizeObserver");
 		const elements = this.#slot.assignedElements();
 
 		const containerTop = this.#container.getBoundingClientRect().top;
 		const { scrollTop } = this.#container;
 		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
 		const offset = scrollTop - padTop - containerTop;
-
-		let totalDelta = 0;
-		let matchCount = 0;
-
 		const newPositions = new Map();
+
 		for (const el of elements) {
 			const key = el.dataset?.key;
 			if (key == null) continue;
-			const { top, bottom } = el.getBoundingClientRect();
-			newPositions.set(key, { top: top + offset, bottom: bottom + offset });
+			let { top, bottom } = el.getBoundingClientRect();
+			top += offset;
+			bottom += offset;
+			newPositions.set(key, { top, bottom });
+		}
+		this.#keyPositions = newPositions;
+	};
+
+	#onSlotChange = () => {
+		console.log("slot change");
+		const elements = this.#slot.assignedElements();
+		this.#resizeObserver.disconnect();
+
+		const containerTop = this.#container.getBoundingClientRect().top;
+		const { scrollTop } = this.#container;
+		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
+		const offset = scrollTop - padTop - containerTop;
+
+		const newPositions = new Map();
+		let totalDelta = 0;
+		let matchCount = 0;
+
+		for (const el of elements) {
+			this.#resizeObserver.observe(el);
+			const key = el.dataset?.key;
+			if (key == null) continue;
+			let { top, bottom } = el.getBoundingClientRect();
+			top += offset;
+			bottom += offset;
+			newPositions.set(key, { top, bottom });
 
 			const oldItemBounds = this.#keyPositions.get(key);
 			if (!oldItemBounds) continue;
@@ -88,7 +117,7 @@ class ScrollPane extends HTMLElement {
 			matchCount += 1;
 		}
 
-		if (totalDelta) this.#scrollPad(totalDelta / matchCount);
+		if (matchCount) this.#scrollPad(totalDelta / matchCount);
 		this.#keyPositions = newPositions;
 	};
 

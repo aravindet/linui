@@ -10,22 +10,30 @@
 </head>
 <body>
 
-  <scroll-pane>
-    <nav id="nav"></nav>
-  </scroll-pane>
+  <scroll-pane></scroll-pane>
 
   <main>
     <datetime-picker min="2020-01-01" max="2030-12-31"></datetime-picker>
   </main>
 
-  <script>
-    const nav = document.getElementById('nav');
-    const N = 20;
-    for (let i = 1; i <= N; i++) {
+  <script type="module">
+    const N = 500;
+    const ITEM_HEIGHT = 40;
+    const BUFFER = 10;
+
+    const scrollPane = document.querySelector('scroll-pane');
+    const padTop = document.createElement('div');
+    const padBottom = document.createElement('div');
+
+    let firstIndex = 0;
+    let lastIndex = -1;
+
+    function createItem(i) {
       const details = document.createElement('details');
       details.name = 'nav';
+      details.dataset.key = String(i);
       const summary = document.createElement('summary');
-      summary.textContent = `Section ${i}`;
+      summary.textContent = `Section ${i + 1}`;
       details.appendChild(summary);
       const count = i === (N - 1) ? 1 : 10;
       for (let j = 1; j <= count; j++) {
@@ -34,10 +42,74 @@
         item.textContent = `Item ${i}.${j}`;
         details.appendChild(item);
       }
-      nav.appendChild(details);
+      return details;
     }
 
-    nav.parentNode.addEventListener('scroll', (e) => console.log('scrolled', e.target.viewTop));
+    function firstItemEl() {
+      for (const child of scrollPane.children)
+        if (child !== padTop && child !== padBottom) return child;
+      return null;
+    }
+
+    function lastItemEl() {
+      for (let i = scrollPane.children.length - 1; i >= 0; i--) {
+        const c = scrollPane.children[i];
+        if (c !== padTop && c !== padBottom) return c;
+      }
+      return null;
+    }
+
+    function updatePads() {
+      const topH = Math.min(firstIndex * ITEM_HEIGHT, 400);
+      const bottomH = Math.min((N - 1 - lastIndex) * ITEM_HEIGHT, 400);
+      if (firstIndex > 0) {
+        padTop.style.height = topH + 'px';
+        if (!padTop.parentNode) scrollPane.prepend(padTop);
+      } else {
+        padTop.remove();
+      }
+      if (lastIndex < N - 1) {
+        padBottom.style.height = bottomH + 'px';
+        if (!padBottom.parentNode) scrollPane.append(padBottom);
+      } else {
+        padBottom.remove();
+      }
+    }
+
+    let cooloffUntil = 0;
+
+    function render() {
+        // const now = performance.now();
+        // if (now < cooloffUntil) return;
+        // cooloffUntil = now + 1000;
+      const padTopH = padTop.parentNode ? parseFloat(padTop.style.height) : 0;
+      const { viewTop, viewBottom } = scrollPane;
+
+      const firstVisible = Math.max(0,
+        Math.floor((viewTop - padTopH) / ITEM_HEIGHT) + firstIndex);
+      const lastVisible = Math.min(N - 1,
+        Math.floor((viewBottom - padTopH) / ITEM_HEIGHT) + firstIndex);
+      const newFirst = Math.max(0, firstVisible - BUFFER);
+      const newLast = Math.min(N - 1, lastVisible + BUFFER);
+
+      while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
+      while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
+
+      const tailAnchor = padBottom.parentNode ? padBottom : null;
+      for (let i = Math.max(lastIndex + 1, newFirst); i <= newLast; i++)
+        scrollPane.insertBefore(createItem(i), tailAnchor);
+
+      const headAnchor = firstItemEl();
+      for (let i = newFirst; i < firstIndex; i++)
+        scrollPane.insertBefore(createItem(i), headAnchor);
+
+      firstIndex = newFirst;
+      lastIndex = newLast;
+      updatePads();
+    }
+
+    scrollPane.addEventListener('scroll', render);
+    render();
   </script>
 
 </body>
