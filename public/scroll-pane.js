@@ -93,8 +93,11 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onScroll = () => {
-		if (this.#hovered) this.#scrollPad(0);
-		this.dispatchEvent(new Event("scroll"));
+		if (this.#hovered) {
+			this.#scrollPad(0);
+		} else {
+			this.dispatchEvent(new Event("scroll"));
+		}
 	};
 
 	#onMouseEnter = () => {
@@ -120,7 +123,11 @@ class ScrollPane extends HTMLElement {
 	}
 
 	get viewBottom() {
-		return this.viewTop + this.#container.clientHeight;
+		return this.viewTop + this.viewHeight;
+	}
+
+	get viewHeight() {
+		return this.#container.clientHeight;
 	}
 
 	get contentHeight() {
@@ -143,6 +150,8 @@ class ScrollPane extends HTMLElement {
 		contentStyle.paddingTop = `${padTop}px`;
 		contentStyle.paddingBottom = `${padBottom}px`;
 		this.#container.scrollTop = scrollTop;
+
+		this.dispatchEvent(new Event("scroll"));
 	};
 
 	#onClick = (e) => {

@@ -37,7 +37,7 @@
       nav.appendChild(details);
     }
 
-    nav.parentNode.addEventListener('scroll', console.log('scrolled'));
+    nav.parentNode.addEventListener('scroll', (e) => console.log('scrolled', e.target.viewTop));
   </script>
 
 </body>
