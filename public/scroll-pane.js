@@ -28,6 +28,8 @@ template.innerHTML = html`
 class ScrollPane extends HTMLElement {
 	#container;
 	#content;
+	#slot;
+	#keyPositions = new Map();
 	#anchorEl = null;
 	#anchorY = 0;
 	#rafId = null;
@@ -40,6 +42,7 @@ class ScrollPane extends HTMLElement {
 		this.shadowRoot.appendChild(template.content.cloneNode(true));
 		this.#container = this.shadowRoot.querySelector(".scroll-container");
 		this.#content = this.shadowRoot.querySelector(".scroll-content");
+		this.#slot = this.shadowRoot.querySelector("slot");
 	}
 
 	connectedCallback() {
@@ -47,6 +50,7 @@ class ScrollPane extends HTMLElement {
 		this.addEventListener("mouseenter", this.#onMouseEnter);
 		this.addEventListener("mouseleave", this.#onMouseLeave);
 		this.#container.addEventListener("scroll", this.#onScroll);
+		this.#slot.addEventListener("slotchange", this.#onSlotChange);
 	}
 
 	disconnectedCallback() {
@@ -54,16 +58,48 @@ class ScrollPane extends HTMLElement {
 		this.removeEventListener("mouseenter", this.#onMouseEnter);
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
 		this.#container.removeEventListener("scroll", this.#onScroll);
+		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 	}
+
+	#onSlotChange = () => {
+		const elements = this.#slot.assignedElements();
+
+		const containerTop = this.#container.getBoundingClientRect().top;
+		const { scrollTop } = this.#container;
+		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
+		const offset = scrollTop - padTop - containerTop;
+
+		let totalDelta = 0;
+		let matchCount = 0;
+
+		const newPositions = new Map();
+		for (const el of elements) {
+			const key = el.dataset?.key;
+			if (key == null) continue;
+			const { top, bottom } = el.getBoundingClientRect();
+			newPositions.set(key, { top: top + offset, bottom: bottom + offset });
+
+			const oldItemBounds = this.#keyPositions.get(key);
+			if (!oldItemBounds) continue;
+			const { top: oldTop, bottom: oldBottom } = oldItemBounds;
+			if (oldBottom < this.viewTop || oldTop > this.viewBottom) continue;
+
+			totalDelta += top - oldItemBounds.top;
+			matchCount += 1;
+		}
+
+		if (totalDelta) this.#scrollPad(totalDelta / matchCount);
+		this.#keyPositions = newPositions;
+	};
 
 	#onScroll = () => {
 		if (this.#hovered) this.#scrollPad(0);
+		this.dispatchEvent(new Event("scroll"));
 	};
 
 	#onMouseEnter = () => {
 		this.#hovered = true;
 		const { paddingTop, paddingBottom } = getComputedStyle(this.#content);
-		console.log("restoring", { paddingTop, paddingBottom });
 		const contentStyle = this.#content.style;
 		contentStyle.transition = "none";
 		contentStyle.paddingTop = paddingTop;
@@ -73,32 +109,40 @@ class ScrollPane extends HTMLElement {
 	#onMouseLeave = () => {
 		this.#hovered = false;
 		const contentStyle = this.#content.style;
-		contentStyle.transition = "padding 5s ease-in-out";
+		contentStyle.transition = "padding 0.5s ease-in-out";
 		contentStyle.paddingTop = 0;
 		contentStyle.paddingBottom = 0;
 	};
 
-	#scrollPad = (delta = 0) => {
-		// Get current values from the DOM.
+	get viewTop() {
+		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
+		return this.#container.scrollTop - padTop;
+	}
+
+	get viewBottom() {
+		return this.viewTop + this.#container.clientHeight;
+	}
+
+	get contentHeight() {
 		const contentStyle = this.#content.style;
-		const { scrollTop, scrollHeight, clientHeight } = this.#container;
 		const padTop = parseFloat(contentStyle.paddingTop) || 0;
 		const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
+		return this.#container.scrollHeight - padTop - padBottom;
+	}
 
-		// Real coords, i.e. relative to actual content excluding paddings.
-		const realHeight = scrollHeight - padTop - padBottom;
-		const realScrollTop = scrollTop - padTop + delta;
-		const realScrollBottom = realScrollTop + clientHeight - realHeight;
+	#scrollPad = (delta = 0) => {
+		const contentAbove = this.viewTop + delta;
+		const contentBelow = this.contentHeight - this.viewBottom - delta;
 
-		// Calculate optimal DOM values
-		const nextPadTop = Math.max(0, -realScrollTop);
-		const nextPadBottom = Math.max(0, realScrollBottom);
-		const nextScrollTop = realScrollTop + nextPadTop;
+		// Calculate DOM values
+		const padTop = Math.max(0, -contentAbove);
+		const padBottom = Math.max(0, -contentBelow);
+		const scrollTop = contentAbove + padTop;
 
-		// Put the optimal values into the DOM
-		contentStyle.paddingTop = `${nextPadTop}px`;
-		contentStyle.paddingBottom = `${nextPadBottom}px`;
-		this.#container.scrollTop = nextScrollTop;
+		const contentStyle = this.#content.style;
+		contentStyle.paddingTop = `${padTop}px`;
+		contentStyle.paddingBottom = `${padBottom}px`;
+		this.#container.scrollTop = scrollTop;
 	};
 
 	#onClick = (e) => {
@@ -111,15 +155,11 @@ class ScrollPane extends HTMLElement {
 
 	#loop = () => {
 		this.#rafId = null;
-
 		if (!this.#anchorEl.isConnected) return;
 		const delta = this.#anchorEl.getBoundingClientRect().top - this.#anchorY;
-		if (delta) {
-			this.#scrollPad(delta);
-			this.#loopUntil = performance.now() + 100;
-		}
-
-		if (performance.now() < this.#loopUntil && !this.#rafId) {
+		this.#scrollPad(delta);
+		if (delta) this.#loopUntil = performance.now() + 100;
+		if (performance.now() < this.#loopUntil) {
 			this.#rafId = requestAnimationFrame(this.#loop);
 		}
 	};

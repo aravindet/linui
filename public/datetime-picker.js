@@ -283,6 +283,7 @@ class DatetimePicker extends HTMLElement {
 		el.textContent = label;
 		el.dataset.col = col;
 		el.dataset.val = val;
+		el.dataset.key = val;
 		if (selected) el.dataset.selected = "";
 		if (disabled) el.dataset.disabled = "";
 		return el;
