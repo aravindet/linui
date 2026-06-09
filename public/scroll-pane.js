@@ -29,14 +29,11 @@ class ScrollPane extends HTMLElement {
 	#container;
 	#content;
 	#slot;
-	#keyPositions = new Map();
-	#anchorEl = null;
+	#visibleChildren = new Map();
+	#anchorElement = null;
 	#anchorY = 0;
-	#rafId = null;
-	#loopUntil = 0;
-	#hovered = false;
-
 	#resizeObserver = null;
+	#intersectionObserver = null;
 
 	constructor() {
 		super();
@@ -46,104 +43,116 @@ class ScrollPane extends HTMLElement {
 		this.#content = this.shadowRoot.querySelector(".scroll-content");
 		this.#slot = this.shadowRoot.querySelector("slot");
 		this.#resizeObserver = new ResizeObserver(this.#onResize);
+		this.#intersectionObserver = new IntersectionObserver(
+			this.#onIntersection,
+			{ root: this.#container },
+		);
 	}
 
 	connectedCallback() {
-		this.addEventListener("click", this.#onClick);
-		this.addEventListener("mouseenter", this.#onMouseEnter);
+		this.addEventListener("mouseenter", this.#onAnchorUpdate);
+		this.addEventListener("mousemove", this.#onAnchorUpdate);
 		this.addEventListener("mouseleave", this.#onMouseLeave);
 		this.#container.addEventListener("scroll", this.#onScroll);
 		this.#slot.addEventListener("slotchange", this.#onSlotChange);
 	}
 
 	disconnectedCallback() {
-		this.removeEventListener("click", this.#onClick);
-		this.removeEventListener("mouseenter", this.#onMouseEnter);
+		this.removeEventListener("mouseenter", this.#onAnchorUpdate);
+		this.removeEventListener("mousemove", this.#onAnchorUpdate);
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
 		this.#container.removeEventListener("scroll", this.#onScroll);
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 	}
 
-	#onResize = () => {
-		console.log("ResizeObserver");
-		const elements = this.#slot.assignedElements();
-
+	#getContentTop = (el) => {
 		const containerTop = this.#container.getBoundingClientRect().top;
+		const { top } = el.getBoundingClientRect();
 		const { scrollTop } = this.#container;
 		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
-		const offset = scrollTop - padTop - containerTop;
-		const newPositions = new Map();
+		return top - containerTop + scrollTop - padTop;
+	};
 
-		for (const el of elements) {
-			const key = el.dataset?.key;
-			if (key == null) continue;
-			let { top, bottom } = el.getBoundingClientRect();
-			top += offset;
-			bottom += offset;
-			newPositions.set(key, { top, bottom });
+	#onIntersection = (entries) => {
+		for (const { target, isIntersecting } of entries) {
+			if (isIntersecting) {
+				this.#visibleChildren.set(target, this.#getContentTop(target));
+			} else {
+				this.#visibleChildren.delete(target);
+			}
 		}
-		this.#keyPositions = newPositions;
+	};
+
+	#onResize = () => {
+		if (this.#anchorElement?.isConnected) {
+			const currentTop = this.#getContentTop(this.#anchorElement);
+			const delta = currentTop - this.#anchorY;
+			this.#anchorY = currentTop;
+			if (delta) {
+				this.#scrollPad(delta);
+			}
+			return;
+		}
+
+		let totalDelta = 0;
+		let count = 0;
+		for (const [el, storedTop] of this.#visibleChildren) {
+			const delta = this.#getContentTop(el) - storedTop;
+			if (delta) {
+				totalDelta += delta;
+				count++;
+			}
+		}
+		if (count) {
+			this.#scrollPad(totalDelta / count);
+			for (const [el] of this.#visibleChildren) {
+				this.#visibleChildren.set(el, this.#getContentTop(el));
+			}
+		}
 	};
 
 	#onSlotChange = () => {
-		console.log("slot change");
-		const elements = this.#slot.assignedElements();
 		this.#resizeObserver.disconnect();
+		this.#intersectionObserver.disconnect();
 
-		const containerTop = this.#container.getBoundingClientRect().top;
-		const { scrollTop } = this.#container;
-		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
-		const offset = scrollTop - padTop - containerTop;
-
-		const newPositions = new Map();
 		let totalDelta = 0;
-		let matchCount = 0;
+		let count = 0;
 
-		for (const el of elements) {
-			this.#resizeObserver.observe(el);
-			const key = el.dataset?.key;
-			if (key == null) continue;
-			let { top, bottom } = el.getBoundingClientRect();
-			top += offset;
-			bottom += offset;
-			newPositions.set(key, { top, bottom });
+		for (const el of this.#slot.assignedElements()) {
+			this.#resizeObserver.observe(el, { box: "border-box" });
+			this.#intersectionObserver.observe(el);
 
-			const oldItemBounds = this.#keyPositions.get(key);
-			if (!oldItemBounds) continue;
-			const { top: oldTop, bottom: oldBottom } = oldItemBounds;
-			if (oldBottom < this.viewTop || oldTop > this.viewBottom) continue;
-
-			totalDelta += top - oldItemBounds.top;
-			matchCount += 1;
+			if (!this.#visibleChildren.has(el)) continue;
+			const delta = this.#getContentTop(el) - this.#visibleChildren.get(el);
+			totalDelta += delta;
+			count++;
 		}
 
-		if (matchCount) this.#scrollPad(totalDelta / matchCount);
-		this.#keyPositions = newPositions;
+		if (count) this.#scrollPad(totalDelta / count);
+
+		for (const [el] of this.#visibleChildren) {
+			if (el.isConnected) {
+				this.#visibleChildren.set(el, this.#getContentTop(el));
+			} else {
+				this.#visibleChildren.delete(el);
+			}
+		}
+		if (this.#anchorElement?.isConnected) {
+			this.#anchorY = this.#getContentTop(this.#anchorElement);
+		}
 	};
 
 	#onScroll = () => {
-		if (this.#hovered) {
-			this.#scrollPad(0);
-		} else {
-			this.dispatchEvent(new Event("scroll"));
-		}
+		this.dispatchEvent(new Event("scroll"));
 	};
 
-	#onMouseEnter = () => {
-		this.#hovered = true;
-		const { paddingTop, paddingBottom } = getComputedStyle(this.#content);
-		const contentStyle = this.#content.style;
-		contentStyle.transition = "none";
-		contentStyle.paddingTop = paddingTop;
-		contentStyle.paddingBottom = paddingBottom;
+	#onAnchorUpdate = (e) => {
+		this.#anchorElement = e.target;
+		this.#anchorY = this.#getContentTop(e.target);
 	};
 
 	#onMouseLeave = () => {
-		this.#hovered = false;
-		const contentStyle = this.#content.style;
-		contentStyle.transition = "padding 0.5s ease-in-out";
-		contentStyle.paddingTop = 0;
-		contentStyle.paddingBottom = 0;
+		this.#anchorElement = null;
 	};
 
 	get viewTop() {
@@ -170,7 +179,6 @@ class ScrollPane extends HTMLElement {
 		const contentAbove = this.viewTop + delta;
 		const contentBelow = this.contentHeight - this.viewBottom - delta;
 
-		// Calculate DOM values
 		const padTop = Math.max(0, -contentAbove);
 		const padBottom = Math.max(0, -contentBelow);
 		const scrollTop = contentAbove + padTop;
@@ -179,27 +187,6 @@ class ScrollPane extends HTMLElement {
 		contentStyle.paddingTop = `${padTop}px`;
 		contentStyle.paddingBottom = `${padBottom}px`;
 		this.#container.scrollTop = scrollTop;
-
-		this.dispatchEvent(new Event("scroll"));
-	};
-
-	#onClick = (e) => {
-		if (this.#rafId !== null) cancelAnimationFrame(this.#rafId);
-		this.#anchorEl = e.target;
-		this.#anchorY = e.target.getBoundingClientRect().top;
-		this.#loopUntil = performance.now() + 100;
-		this.#rafId = requestAnimationFrame(this.#loop);
-	};
-
-	#loop = () => {
-		this.#rafId = null;
-		if (!this.#anchorEl.isConnected) return;
-		const delta = this.#anchorEl.getBoundingClientRect().top - this.#anchorY;
-		this.#scrollPad(delta);
-		if (delta) this.#loopUntil = performance.now() + 100;
-		if (performance.now() < this.#loopUntil) {
-			this.#rafId = requestAnimationFrame(this.#loop);
-		}
 	};
 }
 

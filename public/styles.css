@@ -30,7 +30,7 @@ main {
 }
 
 details {
-	display: relative;
+	position: relative;
 }
 
 details > summary {

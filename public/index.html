@@ -17,7 +17,7 @@
   </main>
 
   <script type="module">
-    const N = 500;
+    const N = 100;
     const ITEM_HEIGHT = 40;
     const BUFFER = 10;
 
@@ -35,7 +35,7 @@
       const summary = document.createElement('summary');
       summary.textContent = `Section ${i + 1}`;
       details.appendChild(summary);
-      const count = i === (N - 1) ? 1 : 10;
+      const count = i === (N - 2) ? 1 : 10;
       for (let j = 1; j <= count; j++) {
         const item = document.createElement('div');
         item.className = 'nav-item';
@@ -76,12 +76,7 @@
       }
     }
 
-    let cooloffUntil = 0;
-
     function render() {
-        // const now = performance.now();
-        // if (now < cooloffUntil) return;
-        // cooloffUntil = now + 1000;
       const padTopH = padTop.parentNode ? parseFloat(padTop.style.height) : 0;
       const { viewTop, viewBottom } = scrollPane;
 
@@ -91,6 +86,11 @@
         Math.floor((viewBottom - padTopH) / ITEM_HEIGHT) + firstIndex);
       const newFirst = Math.max(0, firstVisible - BUFFER);
       const newLast = Math.min(N - 1, lastVisible + BUFFER);
+
+      // Early return if the changes are not substantial:
+
+
+      console.log('render', { viewTop, padTopH, firstIndex, firstVisible, newFirst });
 
       while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
       while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
@@ -102,6 +102,8 @@
       const headAnchor = firstItemEl();
       for (let i = newFirst; i < firstIndex; i++)
         scrollPane.insertBefore(createItem(i), headAnchor);
+
+
 
       firstIndex = newFirst;
       lastIndex = newLast;
