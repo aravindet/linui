@@ -53,7 +53,6 @@ class ScrollPane extends HTMLElement {
 		this.addEventListener("mouseenter", this.#onAnchorUpdate);
 		this.addEventListener("mousemove", this.#onAnchorUpdate);
 		this.addEventListener("mouseleave", this.#onMouseLeave);
-		this.#container.addEventListener("scroll", this.#onScroll);
 		this.#slot.addEventListener("slotchange", this.#onSlotChange);
 	}
 
@@ -61,7 +60,6 @@ class ScrollPane extends HTMLElement {
 		this.removeEventListener("mouseenter", this.#onAnchorUpdate);
 		this.removeEventListener("mousemove", this.#onAnchorUpdate);
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
-		this.#container.removeEventListener("scroll", this.#onScroll);
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 	}
 
@@ -74,76 +72,68 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onIntersection = (entries) => {
+		console.log("Intersection observer called");
+		let change = false;
 		for (const { target, isIntersecting } of entries) {
 			if (isIntersecting) {
+				// if (this.#visibleChildren.has(target)) {
+				// 	console.log(
+				// 		"visibility updated: top moves from",
+				// 		target,
+				// 		this.#visibleChildren.get(target),
+				// 		this.#getContentTop(target),
+				// 	);
+				// }
 				this.#visibleChildren.set(target, this.#getContentTop(target));
-			} else {
+				change = true;
+			} else if (this.#visibleChildren.has(target)) {
 				this.#visibleChildren.delete(target);
+				change = true;
 			}
 		}
+		if (change) this.dispatchEvent(new Event("visibleChildrenChange"));
 	};
 
-	#onResize = () => {
+	#onResize = (entries) => {
+		console.log("Resize observer called");
 		if (this.#anchorElement?.isConnected) {
+			console.log("anchor element");
 			const currentTop = this.#getContentTop(this.#anchorElement);
 			const delta = currentTop - this.#anchorY;
 			this.#anchorY = currentTop;
-			if (delta) {
-				this.#scrollPad(delta);
-			}
+			if (delta) this.#scrollPad(delta);
 			return;
 		}
 
-		let totalDelta = 0;
-		let count = 0;
+		const deltaStats = [];
+		let modalBucket = null;
 		for (const [el, storedTop] of this.#visibleChildren) {
-			const delta = this.#getContentTop(el) - storedTop;
-			if (delta) {
-				totalDelta += delta;
-				count++;
+			const currentTop = this.#getContentTop(el);
+			const delta = currentTop - storedTop;
+			const bucket = Math.round(delta);
+			const [n = 0, sum = 0] = deltaStats[bucket] ?? [];
+			deltaStats[bucket] = [n + 1, sum + delta];
+			if (modalBucket == null || n + 1 > deltaStats[modalBucket][0]) {
+				modalBucket = bucket;
 			}
+			this.#visibleChildren.set(el, currentTop);
 		}
-		if (count) {
-			this.#scrollPad(totalDelta / count);
-			for (const [el] of this.#visibleChildren) {
-				this.#visibleChildren.set(el, this.#getContentTop(el));
-			}
+
+		if (modalBucket != null) {
+			const [n, sum] = deltaStats[modalBucket];
+			this.#scrollPad(sum / n);
 		}
 	};
 
 	#onSlotChange = () => {
+		console.log("slot change called");
 		this.#resizeObserver.disconnect();
 		this.#intersectionObserver.disconnect();
-
-		let totalDelta = 0;
-		let count = 0;
 
 		for (const el of this.#slot.assignedElements()) {
 			this.#resizeObserver.observe(el, { box: "border-box" });
 			this.#intersectionObserver.observe(el);
-
-			if (!this.#visibleChildren.has(el)) continue;
-			const delta = this.#getContentTop(el) - this.#visibleChildren.get(el);
-			totalDelta += delta;
-			count++;
 		}
-
-		if (count) this.#scrollPad(totalDelta / count);
-
-		for (const [el] of this.#visibleChildren) {
-			if (el.isConnected) {
-				this.#visibleChildren.set(el, this.#getContentTop(el));
-			} else {
-				this.#visibleChildren.delete(el);
-			}
-		}
-		if (this.#anchorElement?.isConnected) {
-			this.#anchorY = this.#getContentTop(this.#anchorElement);
-		}
-	};
-
-	#onScroll = () => {
-		this.dispatchEvent(new Event("scroll"));
 	};
 
 	#onAnchorUpdate = (e) => {
@@ -154,6 +144,10 @@ class ScrollPane extends HTMLElement {
 	#onMouseLeave = () => {
 		this.#anchorElement = null;
 	};
+
+	get visibleChildren() {
+		return this.#visibleChildren.keys();
+	}
 
 	get viewTop() {
 		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
@@ -176,6 +170,7 @@ class ScrollPane extends HTMLElement {
 	}
 
 	#scrollPad = (delta = 0) => {
+		console.log("scroll pad called", delta);
 		const contentAbove = this.viewTop + delta;
 		const contentBelow = this.contentHeight - this.viewBottom - delta;
 

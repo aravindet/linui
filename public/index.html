@@ -13,7 +13,7 @@
   <scroll-pane></scroll-pane>
 
   <main>
-    <datetime-picker min="2020-01-01" max="2030-12-31"></datetime-picker>
+    <!--<datetime-picker min="2020-01-01" max="2030-12-31"></datetime-picker>-->
   </main>
 
   <script type="module">
@@ -32,6 +32,7 @@
       const details = document.createElement('details');
       details.name = 'nav';
       details.dataset.key = String(i);
+      details.dataset.index = String(i);
       const summary = document.createElement('summary');
       summary.textContent = `Section ${i + 1}`;
       details.appendChild(summary);
@@ -60,16 +61,16 @@
     }
 
     function updatePads() {
-      const topH = Math.min(firstIndex * ITEM_HEIGHT, 400);
-      const bottomH = Math.min((N - 1 - lastIndex) * ITEM_HEIGHT, 400);
+      const topH = Math.min(firstIndex * ITEM_HEIGHT, 100);
+      const bottomH = Math.min((N - 1 - lastIndex) * ITEM_HEIGHT, 100);
       if (firstIndex > 0) {
-        padTop.style.height = topH + 'px';
+        padTop.style.height = `${topH}px`;
         if (!padTop.parentNode) scrollPane.prepend(padTop);
       } else {
         padTop.remove();
       }
       if (lastIndex < N - 1) {
-        padBottom.style.height = bottomH + 'px';
+        padBottom.style.height = `${bottomH}px`;
         if (!padBottom.parentNode) scrollPane.append(padBottom);
       } else {
         padBottom.remove();
@@ -77,20 +78,29 @@
     }
 
     function render() {
-      const padTopH = padTop.parentNode ? parseFloat(padTop.style.height) : 0;
-      const { viewTop, viewBottom } = scrollPane;
+      let minVisible = N;
+      let maxVisible = -1;
+      for (const el of scrollPane.visibleChildren) {
+        const idx = parseInt(el.dataset.index, 10);
+        if (!Number.isNaN(idx)) {
+          minVisible = Math.min(minVisible, idx);
+          maxVisible = Math.max(maxVisible, idx);
+        }
+      }
 
-      const firstVisible = Math.max(0,
-        Math.floor((viewTop - padTopH) / ITEM_HEIGHT) + firstIndex);
-      const lastVisible = Math.min(N - 1,
-        Math.floor((viewBottom - padTopH) / ITEM_HEIGHT) + firstIndex);
-      const newFirst = Math.max(0, firstVisible - BUFFER);
-      const newLast = Math.min(N - 1, lastVisible + BUFFER);
+      if (maxVisible < 0) {
+        const initLast = Math.min(N - 1, BUFFER * 2);
+        for (let i = 0; i <= initLast; i++) scrollPane.append(createItem(i));
+        firstIndex = 0;
+        lastIndex = initLast;
+        updatePads();
+        return;
+      }
 
-      // Early return if the changes are not substantial:
+      const newFirst = Math.max(0, minVisible - BUFFER);
+      const newLast = Math.min(N - 1, maxVisible + BUFFER);
 
-
-      console.log('render', { viewTop, padTopH, firstIndex, firstVisible, newFirst });
+      console.log('render', { firstIndex, lastIndex, minVisible, maxVisible, newFirst, newLast });
 
       while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
       while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
@@ -103,14 +113,12 @@
       for (let i = newFirst; i < firstIndex; i++)
         scrollPane.insertBefore(createItem(i), headAnchor);
 
-
-
       firstIndex = newFirst;
       lastIndex = newLast;
       updatePads();
     }
 
-    scrollPane.addEventListener('scroll', render);
+    scrollPane.addEventListener('visibleChildrenChange', render);
     render();
   </script>
 
