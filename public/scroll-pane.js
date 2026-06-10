@@ -30,6 +30,7 @@ class ScrollPane extends HTMLElement {
 	#content;
 	#slot;
 	#visibleChildren = new Map();
+	#observedChildren = new Set();
 	#anchorElement = null;
 	#anchorY = 0;
 	#resizeObserver = null;
@@ -127,13 +128,22 @@ class ScrollPane extends HTMLElement {
 
 	#onSlotChange = () => {
 		console.log("slot change called");
-		this.#resizeObserver.disconnect();
-		this.#intersectionObserver.disconnect();
+		const next = new Set(this.#slot.assignedElements());
 
-		for (const el of this.#slot.assignedElements()) {
+		for (const el of this.#observedChildren) {
+			if (next.has(el)) continue;
+			this.#resizeObserver.unobserve(el);
+			this.#intersectionObserver.unobserve(el);
+			this.#visibleChildren.delete(el);
+		}
+
+		for (const el of next) {
+			if (this.#observedChildren.has(el)) continue;
 			this.#resizeObserver.observe(el, { box: "border-box" });
 			this.#intersectionObserver.observe(el);
 		}
+
+		this.#observedChildren = next;
 	};
 
 	#onAnchorUpdate = (e) => {
