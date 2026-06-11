@@ -70,6 +70,7 @@ class ScrollPane extends HTMLElement {
 		this.removeEventListener("mousemove", this.#onMouseMove);
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
+		if (this.#anchorFreeze) clearTimeout(this.#anchorFreeze);
 	}
 
 	#getContentTop = (el) => {
@@ -103,22 +104,25 @@ class ScrollPane extends HTMLElement {
 			return;
 		}
 
-		const deltaStats = [];
+		const deltaStats = new Map();
 		let modalBucket = null;
 		for (const [el, storedTop] of this.#visibleChildren) {
 			const currentTop = this.#getContentTop(el);
 			const delta = currentTop - storedTop;
 			const bucket = Math.round(delta);
-			const [n = 0, sum = 0] = deltaStats[bucket] ?? [];
-			deltaStats[bucket] = [n + 1, sum + delta];
-			if (modalBucket == null || n + 1 > deltaStats[modalBucket][0]) {
+			const [n = 0, sum = 0] = deltaStats.get(bucket) ?? [];
+			deltaStats.set(bucket, [n + 1, sum + delta]);
+			if (modalBucket == null || n + 1 > deltaStats.get(modalBucket)[0]) {
 				modalBucket = bucket;
 			}
 			this.#visibleChildren.set(el, currentTop);
 		}
 
+		/* scrollPad(0) is NOT a no-op; it adds top and bottom
+	       padding in response to a few elements resizing while
+		   most others remain in place. */
 		if (modalBucket != null) {
-			const [n, sum] = deltaStats[modalBucket];
+			const [n, sum] = deltaStats.get(modalBucket);
 			this.#scrollPad(sum / n);
 		}
 	};
@@ -143,10 +147,10 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#setAnchor(element, override = false) {
-		const position = element ? this.#getContentTop(element) : 0;
 		if (this.#anchorFreeze && !override) {
-			this.#nextAnchor = { element, position };
+			this.#nextAnchor = element;
 		} else {
+			const position = element ? this.#getContentTop(element) : 0;
 			this.#anchor = { element, position };
 		}
 	}
@@ -165,8 +169,10 @@ class ScrollPane extends HTMLElement {
 	}
 
 	#unfreezeAnchor = () => {
-		if (this.#anchorFreeze && this.#nextAnchor != null) {
-			this.#anchor = this.#nextAnchor;
+		if (this.#nextAnchor != null) {
+			const element = this.#nextAnchor;
+			const position = element ? this.#getContentTop(element) : 0;
+			this.#anchor = { element, position };
 			this.#nextAnchor = null;
 		}
 		this.#anchorFreeze = null;
