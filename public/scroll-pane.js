@@ -25,14 +25,71 @@ template.innerHTML = html`
 	</div>
 `;
 
+class Freezable {
+	#value = null;
+	#nextValue = null;
+	#isFrozen = false;
+
+	constructor(val) {
+		this.#value = val;
+	}
+
+	get value() {
+		return this.#value;
+	}
+
+	set value(val) {
+		// console.error(
+		// 	"set",
+		// 	val?.[0]?.parentNode.dataset.key,
+		// 	val?.[1],
+		// 	this.#isFrozen,
+		// );
+		if (this.#isFrozen) {
+			if (this.#nextValue?.[0]) this.#nextValue[0].style.background = "";
+			if (val[0]) val[0].style.background = "#ff0";
+			this.#nextValue = val;
+		} else {
+			if (this.#value[0]) this.#value[0].style.background = "";
+			if (val[0]) val[0].style.background = "#f00";
+			this.#value = val;
+		}
+	}
+
+	forceSet(val) {
+		// console.error("force set", val);
+		if (this.#value[0]) this.#value[0].style.background = "";
+		if (val[0]) val[0].style.background = "#f00";
+		this.#value = val;
+	}
+
+	freeze() {
+		this.#isFrozen = true;
+	}
+
+	unfreeze() {
+		if (this.#isFrozen && this.#nextValue != null) {
+			if (this.#nextValue[0]) this.#nextValue[0].style.background = "#f00";
+			this.#value = this.#nextValue;
+			this.#nextValue = null;
+		}
+		this.#isFrozen = false;
+	}
+}
+
 class ScrollPane extends HTMLElement {
 	#container;
 	#content;
 	#slot;
+
 	#visibleChildren = new Map();
 	#observedChildren = new Set();
-	#anchorElement = null;
-	#anchorY = 0;
+
+	#anchor = new Freezable([null, 0]);
+	#anchorFreezeTimer = null;
+
+	#isProgrammaticScroll = false;
+
 	#resizeObserver = null;
 	#intersectionObserver = null;
 
@@ -51,15 +108,17 @@ class ScrollPane extends HTMLElement {
 	}
 
 	connectedCallback() {
-		this.addEventListener("mouseenter", this.#onAnchorUpdate);
-		this.addEventListener("mousemove", this.#onAnchorUpdate);
+		this.#container.addEventListener("scroll", this.#onScroll);
+		this.addEventListener("mousedown", this.#onMouseDown);
+		this.addEventListener("mousemove", this.#onMouseMove);
 		this.addEventListener("mouseleave", this.#onMouseLeave);
 		this.#slot.addEventListener("slotchange", this.#onSlotChange);
 	}
 
 	disconnectedCallback() {
-		this.removeEventListener("mouseenter", this.#onAnchorUpdate);
-		this.removeEventListener("mousemove", this.#onAnchorUpdate);
+		this.#container.removeEventListener("scroll", this.#onScroll);
+		this.removeEventListener("mousedown", this.#onMouseDown);
+		this.removeEventListener("mousemove", this.#onMouseMove);
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 	}
@@ -73,18 +132,9 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onIntersection = (entries) => {
-		console.log("Intersection observer called");
 		let change = false;
 		for (const { target, isIntersecting } of entries) {
 			if (isIntersecting) {
-				// if (this.#visibleChildren.has(target)) {
-				// 	console.log(
-				// 		"visibility updated: top moves from",
-				// 		target,
-				// 		this.#visibleChildren.get(target),
-				// 		this.#getContentTop(target),
-				// 	);
-				// }
 				this.#visibleChildren.set(target, this.#getContentTop(target));
 				change = true;
 			} else if (this.#visibleChildren.has(target)) {
@@ -95,13 +145,13 @@ class ScrollPane extends HTMLElement {
 		if (change) this.dispatchEvent(new Event("visibleChildrenChange"));
 	};
 
-	#onResize = (entries) => {
-		console.log("Resize observer called");
-		if (this.#anchorElement?.isConnected) {
-			console.log("anchor element");
-			const currentTop = this.#getContentTop(this.#anchorElement);
-			const delta = currentTop - this.#anchorY;
-			this.#anchorY = currentTop;
+	#onResize = () => {
+		const [anchorElement, anchorPosition] = this.#anchor.value;
+		if (anchorElement?.isConnected) {
+			console.log("Found anchor");
+			const currentTop = this.#getContentTop(anchorElement);
+			const delta = currentTop - anchorPosition;
+			this.#anchor.forceSet([anchorElement, currentTop]);
 			if (delta) this.#scrollPad(delta);
 			return;
 		}
@@ -127,7 +177,6 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onSlotChange = () => {
-		console.log("slot change called");
 		const next = new Set(this.#slot.assignedElements());
 
 		for (const el of this.#observedChildren) {
@@ -146,52 +195,63 @@ class ScrollPane extends HTMLElement {
 		this.#observedChildren = next;
 	};
 
-	#onAnchorUpdate = (e) => {
-		this.#anchorElement = e.target;
-		this.#anchorY = this.#getContentTop(e.target);
+	#onScroll = () => {
+		if (this.#isProgrammaticScroll) return;
+		console.log("nonprogrammatic");
+		this.#anchor.forceSet([null, 0]);
+	};
+
+	#onMouseDown = (e) => {
+		this.#anchor.forceSet([e.target, this.#getContentTop(e.target)]);
+	};
+
+	#onMouseMove = (e) => {
+		this.#anchor.value = [e.target, this.#getContentTop(e.target)];
 	};
 
 	#onMouseLeave = () => {
-		this.#anchorElement = null;
+		this.#anchor.value = [null, 0];
 	};
 
 	get visibleChildren() {
 		return this.#visibleChildren.keys();
 	}
 
-	get viewTop() {
-		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
-		return this.#container.scrollTop - padTop;
-	}
+	#unfreezeAnchor = () => {
+		console.log("unfrozen");
+		this.#anchor.unfreeze();
+	};
 
-	get viewBottom() {
-		return this.viewTop + this.viewHeight;
-	}
-
-	get viewHeight() {
-		return this.#container.clientHeight;
-	}
-
-	get contentHeight() {
-		const contentStyle = this.#content.style;
-		const padTop = parseFloat(contentStyle.paddingTop) || 0;
-		const padBottom = parseFloat(contentStyle.paddingBottom) || 0;
-		return this.#container.scrollHeight - padTop - padBottom;
-	}
+	#clearProgrammaticScroll = () => {
+		this.#isProgrammaticScroll = false;
+	};
 
 	#scrollPad = (delta = 0) => {
-		console.log("scroll pad called", delta);
-		const contentAbove = this.viewTop + delta;
-		const contentBelow = this.contentHeight - this.viewBottom - delta;
+		const contentStyle = this.#content.style;
+		const curPadTop = parseFloat(contentStyle.paddingTop) || 0;
+		const curPadBottom = parseFloat(contentStyle.paddingBottom) || 0;
+		const conHeight = this.#container.scrollHeight - curPadTop - curPadBottom;
+
+		const viewTop = this.#container.scrollTop - curPadTop;
+		const viewBottom = viewTop + this.#container.clientHeight;
+		const contentAbove = viewTop + delta;
+		const contentBelow = conHeight - viewBottom - delta;
 
 		const padTop = Math.max(0, -contentAbove);
 		const padBottom = Math.max(0, -contentBelow);
 		const scrollTop = contentAbove + padTop;
 
-		const contentStyle = this.#content.style;
 		contentStyle.paddingTop = `${padTop}px`;
 		contentStyle.paddingBottom = `${padBottom}px`;
+		this.#isProgrammaticScroll = true;
 		this.#container.scrollTop = scrollTop;
+		requestAnimationFrame(this.#clearProgrammaticScroll);
+
+		// Freeze the effective anchor for 50s after any
+		if (this.#anchorFreezeTimer) clearTimeout(this.#anchorFreezeTimer);
+		this.#anchorFreezeTimer = setTimeout(this.#unfreezeAnchor, 50);
+		this.#anchor.freeze();
+		console.log("frozen");
 	};
 }
 

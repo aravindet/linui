@@ -100,7 +100,7 @@
       const newFirst = Math.max(0, minVisible - BUFFER);
       const newLast = Math.min(N - 1, maxVisible + BUFFER);
 
-      console.log('render', { firstIndex, lastIndex, minVisible, maxVisible, newFirst, newLast });
+      // console.log('render', { firstIndex, lastIndex, minVisible, maxVisible, newFirst, newLast });
 
       while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
       while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
