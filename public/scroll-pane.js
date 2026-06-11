@@ -25,58 +25,6 @@ template.innerHTML = html`
 	</div>
 `;
 
-class Freezable {
-	#value = null;
-	#nextValue = null;
-	#isFrozen = false;
-
-	constructor(val) {
-		this.#value = val;
-	}
-
-	get value() {
-		return this.#value;
-	}
-
-	set value(val) {
-		// console.error(
-		// 	"set",
-		// 	val?.[0]?.parentNode.dataset.key,
-		// 	val?.[1],
-		// 	this.#isFrozen,
-		// );
-		if (this.#isFrozen) {
-			if (this.#nextValue?.[0]) this.#nextValue[0].style.background = "";
-			if (val[0]) val[0].style.background = "#ff0";
-			this.#nextValue = val;
-		} else {
-			if (this.#value[0]) this.#value[0].style.background = "";
-			if (val[0]) val[0].style.background = "#f00";
-			this.#value = val;
-		}
-	}
-
-	forceSet(val) {
-		// console.error("force set", val);
-		if (this.#value[0]) this.#value[0].style.background = "";
-		if (val[0]) val[0].style.background = "#f00";
-		this.#value = val;
-	}
-
-	freeze() {
-		this.#isFrozen = true;
-	}
-
-	unfreeze() {
-		if (this.#isFrozen && this.#nextValue != null) {
-			if (this.#nextValue[0]) this.#nextValue[0].style.background = "#f00";
-			this.#value = this.#nextValue;
-			this.#nextValue = null;
-		}
-		this.#isFrozen = false;
-	}
-}
-
 class ScrollPane extends HTMLElement {
 	#container;
 	#content;
@@ -85,8 +33,9 @@ class ScrollPane extends HTMLElement {
 	#visibleChildren = new Map();
 	#observedChildren = new Set();
 
-	#anchor = new Freezable([null, 0]);
-	#anchorFreezeTimer = null;
+	#anchor = { element: null, position: 0 };
+	#nextAnchor = null;
+	#anchorFreeze = null;
 
 	#isProgrammaticScroll = false;
 
@@ -146,12 +95,10 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onResize = () => {
-		const [anchorElement, anchorPosition] = this.#anchor.value;
-		if (anchorElement?.isConnected) {
-			console.log("Found anchor");
-			const currentTop = this.#getContentTop(anchorElement);
-			const delta = currentTop - anchorPosition;
-			this.#anchor.forceSet([anchorElement, currentTop]);
+		if (this.#anchor.element?.isConnected) {
+			const currentTop = this.#getContentTop(this.#anchor.element);
+			const delta = currentTop - this.#anchor.position;
+			this.#anchor.position = currentTop;
 			if (delta) this.#scrollPad(delta);
 			return;
 		}
@@ -195,31 +142,34 @@ class ScrollPane extends HTMLElement {
 		this.#observedChildren = next;
 	};
 
+	#setAnchor(element, override = false) {
+		const position = element ? this.#getContentTop(element) : 0;
+		if (this.#anchorFreeze && !override) {
+			this.#nextAnchor = { element, position };
+		} else {
+			this.#anchor = { element, position };
+		}
+	}
+
 	#onScroll = () => {
 		if (this.#isProgrammaticScroll) return;
-		console.log("nonprogrammatic");
-		this.#anchor.forceSet([null, 0]);
+		this.#setAnchor(null, true);
 	};
 
-	#onMouseDown = (e) => {
-		this.#anchor.forceSet([e.target, this.#getContentTop(e.target)]);
-	};
-
-	#onMouseMove = (e) => {
-		this.#anchor.value = [e.target, this.#getContentTop(e.target)];
-	};
-
-	#onMouseLeave = () => {
-		this.#anchor.value = [null, 0];
-	};
+	#onMouseDown = (e) => this.#setAnchor(e.target, true);
+	#onMouseMove = (e) => this.#setAnchor(e.target);
+	#onMouseLeave = () => this.#setAnchor(null);
 
 	get visibleChildren() {
 		return this.#visibleChildren.keys();
 	}
 
 	#unfreezeAnchor = () => {
-		console.log("unfrozen");
-		this.#anchor.unfreeze();
+		if (this.#anchorFreeze && this.#nextAnchor != null) {
+			this.#anchor = this.#nextAnchor;
+			this.#nextAnchor = null;
+		}
+		this.#anchorFreeze = null;
 	};
 
 	#clearProgrammaticScroll = () => {
@@ -247,11 +197,9 @@ class ScrollPane extends HTMLElement {
 		this.#container.scrollTop = scrollTop;
 		requestAnimationFrame(this.#clearProgrammaticScroll);
 
-		// Freeze the effective anchor for 50s after any
-		if (this.#anchorFreezeTimer) clearTimeout(this.#anchorFreezeTimer);
-		this.#anchorFreezeTimer = setTimeout(this.#unfreezeAnchor, 50);
-		this.#anchor.freeze();
-		console.log("frozen");
+		// Freeze the effective anchor for 50s after any resize
+		if (this.#anchorFreeze) clearTimeout(this.#anchorFreeze);
+		this.#anchorFreeze = setTimeout(this.#unfreezeAnchor, 50);
 	};
 }
 
