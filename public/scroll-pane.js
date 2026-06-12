@@ -89,7 +89,6 @@ class ScrollPane extends HTMLElement {
 		return el.getBoundingClientRect().top;
 	};
 
-	#debounceTimer;
 	#onIntersection = (entries) => {
 		// console.log("intersectionobserver");
 		let change = false;
@@ -102,13 +101,7 @@ class ScrollPane extends HTMLElement {
 				change = true;
 			}
 		}
-		if (change) {
-			if (this.#debounceTimer) clearTimeout(this.#debounceTimer);
-			this.#debounceTimer = setTimeout(
-				() => this.dispatchEvent(new Event("visibleChildrenChange")),
-				10,
-			);
-		}
+		if (change) this.dispatchEvent(new Event("visibleChildrenChange"));
 	};
 
 	#onResize = (_entries) => {
@@ -117,7 +110,6 @@ class ScrollPane extends HTMLElement {
 			this.#isMutationScroll = false;
 		});
 
-		// requestAnimationFrame(() => {
 		if (this.#anchor.element?.isConnected) {
 			const currentTop = this.#getViewTop(this.#anchor.element);
 			const delta = currentTop - this.#anchor.position;
@@ -147,7 +139,6 @@ class ScrollPane extends HTMLElement {
 			// console.log("resize:visible", modalBucket, n, this.#lastScrollDelta);
 			this.#scrollPad(sum / n);
 		}
-		// });
 	};
 
 	#onSlotChange = () => {
@@ -176,14 +167,7 @@ class ScrollPane extends HTMLElement {
 		return this.#visibleChildren.keys();
 	}
 
-	#anchorChangeTimer;
-
 	#setAnchor(element, override = false) {
-		if (this.#anchorChangeTimer) {
-			clearTimeout(this.#anchorChangeTimer);
-			this.#anchorChangeTimer = null;
-		}
-
 		if (this.#anchorFreeze && !override) {
 			this.#nextAnchor = element;
 		} else {
@@ -192,14 +176,6 @@ class ScrollPane extends HTMLElement {
 			this.#nextAnchor = undefined;
 		}
 	}
-
-	#scheduleAnchor = (element, override) => {
-		if (this.#anchorChangeTimer) clearTimeout(this.#anchorChangeTimer);
-		this.#anchorChangeTimer = setTimeout(
-			() => this.#setAnchor(element, override),
-			50,
-		);
-	};
 
 	#onScroll = () => {
 		const { scrollTop } = this.#container;
@@ -213,7 +189,7 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onMouseDown = (e) => this.#setAnchor(e.target, true);
-	#onMouseMove = (e) => this.#scheduleAnchor(e.target, false);
+	#onMouseMove = (e) => this.#setAnchor(e.target, false);
 	#onMouseLeave = () => this.#setAnchor(null);
 
 	#unfreezeAnchor = () => {
