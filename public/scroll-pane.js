@@ -37,9 +37,9 @@ class ScrollPane extends HTMLElement {
 	#nextAnchor;
 	#anchorFreeze = null;
 
-	#isProgrammaticScroll = false;
 	#isMutationScroll = false;
-	#mutationScrollDelta = 0;
+	#lastScrollTop = 0;
+	#lastScrollDelta = 0;
 
 	#resizeObserver = null;
 	#intersectionObserver = null;
@@ -89,7 +89,7 @@ class ScrollPane extends HTMLElement {
 
 	#debounceTimer;
 	#onIntersection = (entries) => {
-		console.log("intersectionobserver");
+		// console.log("intersectionobserver");
 		let change = false;
 		for (const { target, isIntersecting } of entries) {
 			if (isIntersecting) {
@@ -119,14 +119,7 @@ class ScrollPane extends HTMLElement {
 		if (this.#anchor.element?.isConnected) {
 			const currentTop = this.#getViewTop(this.#anchor.element);
 			const delta = currentTop - this.#anchor.position;
-			console.log(
-				"resize:anchor",
-				currentTop,
-				this.#anchor.position,
-				delta,
-				this.#lastScrollDelta,
-			);
-			this.#scrollPad(delta, "anchor");
+			this.#scrollPad(delta);
 			return;
 		}
 
@@ -149,14 +142,13 @@ class ScrollPane extends HTMLElement {
         most others remain in place.  */
 		if (modalBucket != null) {
 			const [n, sum] = deltaStats.get(modalBucket);
-			console.log("resize:visible", modalBucket, n, this.#lastScrollDelta);
-			this.#scrollPad(sum / n, "visible");
+			// console.log("resize:visible", modalBucket, n, this.#lastScrollDelta);
+			this.#scrollPad(sum / n);
 		}
 		// });
 	};
 
 	#onSlotChange = () => {
-		console.log("slotchange", this.#lastScrollDelta);
 		const next = new Set(this.#slot.assignedElements());
 		let hasUnobservedRemovals = false;
 		for (const el of this.#observedChildren) {
@@ -194,15 +186,8 @@ class ScrollPane extends HTMLElement {
 			this.#nextAnchor = element;
 		} else {
 			const position = element ? this.#getViewTop(element) : 0;
-			// if (element)
-			// 	console.log(
-			// 		"anchoring",
-			// 		element.closest("details").dataset.key,
-			// 		"to",
-			// 		position,
-			// 	);
-			// else console.log("clearing anchor");
 			this.#anchor = { element, position };
+			this.#nextAnchor = undefined;
 		}
 	}
 
@@ -214,17 +199,13 @@ class ScrollPane extends HTMLElement {
 		);
 	};
 
-	#lastScrollTop = 0;
-	#lastScrollDelta = 0;
-
 	#onScroll = () => {
-		console.log("scroll", this.#isMutationScroll, this.#isProgrammaticScroll);
+		console.log("scroll", this.#isMutationScroll);
 		this.#lastScrollDelta = this.#container.scrollTop - this.#lastScrollTop;
 		this.#lastScrollTop = this.#container.scrollTop;
 		if (this.#isMutationScroll) return;
-		if (this.#isProgrammaticScroll) return;
 		this.#setAnchor(null, true);
-		this.#scrollPad(0, "scroll"); // Remove any unnecessary paddings.
+		this.#scrollPad(0); // Remove any unnecessary paddings.
 	};
 
 	#onMouseDown = (e) => this.#setAnchor(e.target, true);
@@ -245,12 +226,8 @@ class ScrollPane extends HTMLElement {
 		this.#anchorFreeze = null;
 	};
 
-	#clearProgrammaticScroll = () => {
-		this.#isProgrammaticScroll = false;
-	};
-
-	#scrollPad = (delta = 0, reason) => {
-		// If scrolled to the bottom, do nothing.
+	#scrollPad = (delta = 0) => {
+		// If scrolled to the bottom, suppress scroll up.
 		const atBottom =
 			this.#container.scrollTop + this.#container.clientHeight >
 			this.#container.scrollHeight - 0.5;
@@ -271,24 +248,19 @@ class ScrollPane extends HTMLElement {
 
 		contentStyle.paddingTop = `${padTop}px`;
 		contentStyle.paddingBottom = `${padBottom}px`;
-		this.#isProgrammaticScroll = true;
-		if (!atBottom || delta >= 0 || this.#lastScrollDelta <= 0) {
+		if (
+			(!atBottom || delta >= 0 || this.#lastScrollDelta <= 0) &&
+			Math.abs(this.#container.scrollTop - scrollTop) > 0.5
+		) {
 			// console.log("scrollPad scroll", reason, {
 			// 	delta,
 			// 	padTopDelta: padTop - curPadTop,
 			// 	padBottomDelta: padBottom - curPadBottom,
 			// 	scrollTopDelta: -this.#container.scrollTop + scrollTop,
 			// });
+
 			this.#container.scrollTop = scrollTop;
-		} else {
-			console.log(
-				"scrollPad suppressed: at bottom",
-				delta,
-				-this.#container.scrollTop + scrollTop,
-				this.#lastScrollDelta,
-			);
 		}
-		requestAnimationFrame(this.#clearProgrammaticScroll);
 
 		// Freeze the effective anchor for 50s after any resize
 		if (this.#anchorFreeze) clearTimeout(this.#anchorFreeze);

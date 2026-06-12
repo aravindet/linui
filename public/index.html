@@ -5,6 +5,15 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>linui</title>
   <link rel="stylesheet" href="styles.css">
+  <style>
+    @keyframes pad-pulse {
+      0%, 100% { padding-top: 0px; padding-bottom: 0px; }
+      50%       { padding-top: 20px; padding-bottom: 20px; }
+    }
+    details[data-key="1"] {
+      animation: pad-pulse 10s ease-in-out infinite;
+    }
+  </style>
   <script type="module" src="scroll-pane.js"></script>
   <script type="module" src="datetime-picker.js"></script>
 </head>
@@ -91,7 +100,7 @@
       const newFirst = Math.max(0, minVisible - BUFFER);
       const newLast = Math.min(N - 1, maxVisible + BUFFER);
 
-      console.log('render', { firstIndex, lastIndex, minVisible, maxVisible, newFirst, newLast });
+      // console.log('render', { firstIndex, lastIndex, minVisible, maxVisible, newFirst, newLast });
 
       while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
       while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
