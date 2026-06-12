@@ -37,6 +37,9 @@ class ScrollPane extends HTMLElement {
 	#nextAnchor;
 	#anchorFreeze = null;
 
+	#padTop = 0;
+	#padBottom = 0;
+
 	#isMutationScroll = false;
 	#lastScrollTop = 0;
 	#lastScrollDelta = 0;
@@ -79,8 +82,7 @@ class ScrollPane extends HTMLElement {
 		const containerTop = this.#container.getBoundingClientRect().top;
 		const { top } = el.getBoundingClientRect();
 		const { scrollTop } = this.#container;
-		const padTop = parseFloat(this.#content.style.paddingTop) || 0;
-		return top - containerTop + scrollTop - padTop;
+		return top - containerTop + scrollTop - this.#padTop;
 	};
 
 	#getViewTop = (el) => {
@@ -200,12 +202,14 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#onScroll = () => {
-		console.log("scroll", this.#isMutationScroll);
-		this.#lastScrollDelta = this.#container.scrollTop - this.#lastScrollTop;
-		this.#lastScrollTop = this.#container.scrollTop;
+		const { scrollTop } = this.#container;
+		this.#lastScrollDelta = scrollTop - this.#lastScrollTop;
+		this.#lastScrollTop = scrollTop;
 		if (this.#isMutationScroll) return;
 		this.#setAnchor(null, true);
-		this.#scrollPad(0); // Remove any unnecessary paddings.
+
+		// Reduce or remove paddings.
+		if (this.#padTop || this.#padBottom) this.#scrollPad(0);
 	};
 
 	#onMouseDown = (e) => this.#setAnchor(e.target, true);
@@ -227,39 +231,29 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#scrollPad = (delta = 0) => {
+		const { scrollTop, clientHeight, scrollHeight } = this.#container;
 		// If scrolled to the bottom, suppress scroll up.
-		const atBottom =
-			this.#container.scrollTop + this.#container.clientHeight >
-			this.#container.scrollHeight - 0.5;
+		const atBottom = scrollTop + clientHeight > scrollHeight - 0.5;
 
 		const contentStyle = this.#content.style;
-		const curPadTop = parseFloat(contentStyle.paddingTop) || 0;
-		const curPadBottom = parseFloat(contentStyle.paddingBottom) || 0;
-		const conHeight = this.#container.scrollHeight - curPadTop - curPadBottom;
+		const conHeight = scrollHeight - this.#padTop - this.#padBottom;
 
-		const viewTop = this.#container.scrollTop - curPadTop;
-		const viewBottom = viewTop + this.#container.clientHeight;
+		const viewTop = scrollTop - this.#padTop;
+		const viewBottom = viewTop + clientHeight;
 		const contentAbove = viewTop + delta;
 		const contentBelow = conHeight - viewBottom - delta;
 
-		const padTop = Math.max(0, -contentAbove);
-		const padBottom = Math.max(0, -contentBelow);
-		const scrollTop = contentAbove + padTop;
+		this.#padTop = Math.max(0, -contentAbove);
+		this.#padBottom = Math.max(0, -contentBelow);
+		const nextScrollTop = contentAbove + this.#padTop;
 
-		contentStyle.paddingTop = `${padTop}px`;
-		contentStyle.paddingBottom = `${padBottom}px`;
+		contentStyle.paddingTop = `${this.#padTop}px`;
+		contentStyle.paddingBottom = `${this.#padBottom}px`;
 		if (
 			(!atBottom || delta >= 0 || this.#lastScrollDelta <= 0) &&
-			Math.abs(this.#container.scrollTop - scrollTop) > 0.5
+			Math.abs(scrollTop - nextScrollTop) > 0.5
 		) {
-			// console.log("scrollPad scroll", reason, {
-			// 	delta,
-			// 	padTopDelta: padTop - curPadTop,
-			// 	padBottomDelta: padBottom - curPadBottom,
-			// 	scrollTopDelta: -this.#container.scrollTop + scrollTop,
-			// });
-
-			this.#container.scrollTop = scrollTop;
+			this.#container.scrollTop = nextScrollTop;
 		}
 
 		// Freeze the effective anchor for 50s after any resize
