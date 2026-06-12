@@ -76,6 +76,10 @@ class ScrollPane extends HTMLElement {
 		this.removeEventListener("mouseleave", this.#onMouseLeave);
 		this.#slot.removeEventListener("slotchange", this.#onSlotChange);
 		if (this.#anchorFreeze) clearTimeout(this.#anchorFreeze);
+		this.#resizeObserver.disconnect();
+		this.#intersectionObserver.disconnect();
+		this.#observedChildren = new Set();
+		this.#visibleChildren.clear();
 	}
 
 	#getContentTop = (el) => {
@@ -83,10 +87,6 @@ class ScrollPane extends HTMLElement {
 		const { top } = el.getBoundingClientRect();
 		const { scrollTop } = this.#container;
 		return top - containerTop + scrollTop - this.#padTop;
-	};
-
-	#getViewTop = (el) => {
-		return el.getBoundingClientRect().top;
 	};
 
 	#onIntersection = (entries) => {
@@ -111,7 +111,7 @@ class ScrollPane extends HTMLElement {
 		});
 
 		if (this.#anchor.element?.isConnected) {
-			const currentTop = this.#getViewTop(this.#anchor.element);
+			const { top: currentTop } = this.#anchor.element.getBoundingClientRect();
 			const delta = currentTop - this.#anchor.position;
 			this.#scrollPad(delta);
 			return;
@@ -143,24 +143,25 @@ class ScrollPane extends HTMLElement {
 
 	#onSlotChange = () => {
 		const next = new Set(this.#slot.assignedElements());
-		let hasUnobservedRemovals = false;
+		let hasRemovals = false;
 		for (const el of this.#observedChildren) {
 			if (next.has(el)) continue;
 			this.#resizeObserver.unobserve(el);
 			this.#intersectionObserver.unobserve(el);
 			this.#visibleChildren.delete(el);
-			hasUnobservedRemovals = true;
+			hasRemovals = true;
 		}
 
+		let hasAdditions = false;
 		for (const el of next) {
 			if (this.#observedChildren.has(el)) continue;
 			this.#resizeObserver.observe(el, { box: "border-box" });
 			this.#intersectionObserver.observe(el);
-			hasUnobservedRemovals = false; // Adding an observer makes the call.
+			hasAdditions = true;
 		}
 
 		this.#observedChildren = next;
-		if (hasUnobservedRemovals) this.#onResize();
+		if (hasRemovals && !hasAdditions) this.#onResize();
 	};
 
 	get visibleChildren() {
@@ -171,7 +172,7 @@ class ScrollPane extends HTMLElement {
 		if (this.#anchorFreeze && !override) {
 			this.#nextAnchor = element;
 		} else {
-			const position = element ? this.#getViewTop(element) : 0;
+			const { top: position = 0 } = element?.getBoundingClientRect() ?? {};
 			this.#anchor = { element, position };
 			this.#nextAnchor = undefined;
 		}
@@ -198,7 +199,7 @@ class ScrollPane extends HTMLElement {
 			this.#anchor = { element: null, position: 0 };
 		} else if (this.#nextAnchor !== undefined) {
 			const element = this.#nextAnchor;
-			const position = element ? this.#getViewTop(element) : 0;
+			const { top: position = 0 } = element?.getBoundingClientRect() ?? {};
 			// console.log("unfreeze: anchoring", element, "to", position);
 			this.#anchor = { element, position };
 		}
@@ -229,10 +230,11 @@ class ScrollPane extends HTMLElement {
 			(!atBottom || delta >= 0 || this.#lastScrollDelta <= 0) &&
 			Math.abs(scrollTop - nextScrollTop) > 0.5
 		) {
+			this.#isMutationScroll = true;
 			this.#container.scrollTop = nextScrollTop;
 		}
 
-		// Freeze the effective anchor for 50s after any resize
+		// Freeze the effective anchor for 50ms after any resize
 		if (this.#anchorFreeze) clearTimeout(this.#anchorFreeze);
 		this.#anchorFreeze = setTimeout(this.#unfreezeAnchor, 50);
 	};
