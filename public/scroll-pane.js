@@ -34,10 +34,12 @@ class ScrollPane extends HTMLElement {
 	#observedChildren = new Set();
 
 	#anchor = { element: null, position: 0 };
-	#nextAnchor = null;
+	#nextAnchor;
 	#anchorFreeze = null;
 
 	#isProgrammaticScroll = false;
+	#isMutationScroll = false;
+	#mutationScrollDelta = 0;
 
 	#resizeObserver = null;
 	#intersectionObserver = null;
@@ -81,7 +83,13 @@ class ScrollPane extends HTMLElement {
 		return top - containerTop + scrollTop - padTop;
 	};
 
+	#getViewTop = (el) => {
+		return el.getBoundingClientRect().top;
+	};
+
+	#debounceTimer;
 	#onIntersection = (entries) => {
+		console.log("intersectionobserver");
 		let change = false;
 		for (const { target, isIntersecting } of entries) {
 			if (isIntersecting) {
@@ -92,15 +100,33 @@ class ScrollPane extends HTMLElement {
 				change = true;
 			}
 		}
-		if (change) this.dispatchEvent(new Event("visibleChildrenChange"));
+		if (change) {
+			if (this.#debounceTimer) clearTimeout(this.#debounceTimer);
+			this.#debounceTimer = setTimeout(
+				() => this.dispatchEvent(new Event("visibleChildrenChange")),
+				10,
+			);
+		}
 	};
 
-	#onResize = () => {
+	#onResize = (_entries) => {
+		this.#isMutationScroll = true;
+		requestAnimationFrame(() => {
+			this.#isMutationScroll = false;
+		});
+
+		// requestAnimationFrame(() => {
 		if (this.#anchor.element?.isConnected) {
-			const currentTop = this.#getContentTop(this.#anchor.element);
+			const currentTop = this.#getViewTop(this.#anchor.element);
 			const delta = currentTop - this.#anchor.position;
-			this.#anchor.position = currentTop;
-			if (delta) this.#scrollPad(delta);
+			console.log(
+				"resize:anchor",
+				currentTop,
+				this.#anchor.position,
+				delta,
+				this.#lastScrollDelta,
+			);
+			this.#scrollPad(delta, "anchor");
 			return;
 		}
 
@@ -118,63 +144,104 @@ class ScrollPane extends HTMLElement {
 			this.#visibleChildren.set(el, currentTop);
 		}
 
-		/* scrollPad(0) is NOT a no-op; it adds top and bottom
-	       padding in response to a few elements resizing while
-		   most others remain in place. */
+		/*  scrollPad(0) is NOT a no-op; it adds top and bottom
+        padding in response to a few elements resizing while
+        most others remain in place.  */
 		if (modalBucket != null) {
 			const [n, sum] = deltaStats.get(modalBucket);
-			this.#scrollPad(sum / n);
+			console.log("resize:visible", modalBucket, n, this.#lastScrollDelta);
+			this.#scrollPad(sum / n, "visible");
 		}
+		// });
 	};
 
 	#onSlotChange = () => {
+		console.log("slotchange", this.#lastScrollDelta);
 		const next = new Set(this.#slot.assignedElements());
-
+		let hasUnobservedRemovals = false;
 		for (const el of this.#observedChildren) {
 			if (next.has(el)) continue;
 			this.#resizeObserver.unobserve(el);
 			this.#intersectionObserver.unobserve(el);
 			this.#visibleChildren.delete(el);
+			hasUnobservedRemovals = true;
 		}
 
 		for (const el of next) {
 			if (this.#observedChildren.has(el)) continue;
 			this.#resizeObserver.observe(el, { box: "border-box" });
 			this.#intersectionObserver.observe(el);
+			hasUnobservedRemovals = false; // Adding an observer makes the call.
 		}
 
 		this.#observedChildren = next;
+		if (hasUnobservedRemovals) this.#onResize();
 	};
-
-	#setAnchor(element, override = false) {
-		if (this.#anchorFreeze && !override) {
-			this.#nextAnchor = element;
-		} else {
-			const position = element ? this.#getContentTop(element) : 0;
-			this.#anchor = { element, position };
-		}
-	}
-
-	#onScroll = () => {
-		if (this.#isProgrammaticScroll) return;
-		this.#setAnchor(null, true);
-	};
-
-	#onMouseDown = (e) => this.#setAnchor(e.target, true);
-	#onMouseMove = (e) => this.#setAnchor(e.target);
-	#onMouseLeave = () => this.#setAnchor(null);
 
 	get visibleChildren() {
 		return this.#visibleChildren.keys();
 	}
 
-	#unfreezeAnchor = () => {
-		if (this.#nextAnchor != null) {
-			const element = this.#nextAnchor;
-			const position = element ? this.#getContentTop(element) : 0;
-			this.#anchor = { element, position };
-			this.#nextAnchor = null;
+	#anchorChangeTimer;
+
+	#setAnchor(element, override = false) {
+		if (this.#anchorChangeTimer) {
+			clearTimeout(this.#anchorChangeTimer);
+			this.#anchorChangeTimer = null;
 		}
+
+		if (this.#anchorFreeze && !override) {
+			this.#nextAnchor = element;
+		} else {
+			const position = element ? this.#getViewTop(element) : 0;
+			// if (element)
+			// 	console.log(
+			// 		"anchoring",
+			// 		element.closest("details").dataset.key,
+			// 		"to",
+			// 		position,
+			// 	);
+			// else console.log("clearing anchor");
+			this.#anchor = { element, position };
+		}
+	}
+
+	#scheduleAnchor = (element, override) => {
+		if (this.#anchorChangeTimer) clearTimeout(this.#anchorChangeTimer);
+		this.#anchorChangeTimer = setTimeout(
+			() => this.#setAnchor(element, override),
+			50,
+		);
+	};
+
+	#lastScrollTop = 0;
+	#lastScrollDelta = 0;
+
+	#onScroll = () => {
+		console.log("scroll", this.#isMutationScroll, this.#isProgrammaticScroll);
+		this.#lastScrollDelta = this.#container.scrollTop - this.#lastScrollTop;
+		this.#lastScrollTop = this.#container.scrollTop;
+		if (this.#isMutationScroll) return;
+		if (this.#isProgrammaticScroll) return;
+		this.#setAnchor(null, true);
+		this.#scrollPad(0, "scroll"); // Remove any unnecessary paddings.
+	};
+
+	#onMouseDown = (e) => this.#setAnchor(e.target, true);
+	#onMouseMove = (e) => this.#scheduleAnchor(e.target, false);
+	#onMouseLeave = () => this.#setAnchor(null);
+
+	#unfreezeAnchor = () => {
+		if (this.#nextAnchor === null) {
+			// console.log("unfreeze: clearing anchor");
+			this.#anchor = { element: null, position: 0 };
+		} else if (this.#nextAnchor !== undefined) {
+			const element = this.#nextAnchor;
+			const position = element ? this.#getViewTop(element) : 0;
+			// console.log("unfreeze: anchoring", element, "to", position);
+			this.#anchor = { element, position };
+		}
+		this.#nextAnchor = undefined;
 		this.#anchorFreeze = null;
 	};
 
@@ -182,7 +249,12 @@ class ScrollPane extends HTMLElement {
 		this.#isProgrammaticScroll = false;
 	};
 
-	#scrollPad = (delta = 0) => {
+	#scrollPad = (delta = 0, reason) => {
+		// If scrolled to the bottom, do nothing.
+		const atBottom =
+			this.#container.scrollTop + this.#container.clientHeight >
+			this.#container.scrollHeight - 0.5;
+
 		const contentStyle = this.#content.style;
 		const curPadTop = parseFloat(contentStyle.paddingTop) || 0;
 		const curPadBottom = parseFloat(contentStyle.paddingBottom) || 0;
@@ -200,7 +272,22 @@ class ScrollPane extends HTMLElement {
 		contentStyle.paddingTop = `${padTop}px`;
 		contentStyle.paddingBottom = `${padBottom}px`;
 		this.#isProgrammaticScroll = true;
-		this.#container.scrollTop = scrollTop;
+		if (!atBottom || delta >= 0 || this.#lastScrollDelta <= 0) {
+			// console.log("scrollPad scroll", reason, {
+			// 	delta,
+			// 	padTopDelta: padTop - curPadTop,
+			// 	padBottomDelta: padBottom - curPadBottom,
+			// 	scrollTopDelta: -this.#container.scrollTop + scrollTop,
+			// });
+			this.#container.scrollTop = scrollTop;
+		} else {
+			console.log(
+				"scrollPad suppressed: at bottom",
+				delta,
+				-this.#container.scrollTop + scrollTop,
+				this.#lastScrollDelta,
+			);
+		}
 		requestAnimationFrame(this.#clearProgrammaticScroll);
 
 		// Freeze the effective anchor for 50s after any resize

@@ -17,13 +17,14 @@
   </main>
 
   <script type="module">
-    const N = 100;
+    const N = 50;
     const ITEM_HEIGHT = 40;
-    const BUFFER = 10;
+    const BUFFER = 5;
 
     const scrollPane = document.querySelector('scroll-pane');
     const padTop = document.createElement('div');
     const padBottom = document.createElement('div');
+    scrollPane.append(padTop, padBottom);
 
     let firstIndex = 0;
     let lastIndex = -1;
@@ -36,7 +37,7 @@
       const summary = document.createElement('summary');
       summary.textContent = `Section ${i + 1}`;
       details.appendChild(summary);
-      const count = i === (N - 2) ? 1 : 10;
+      const count = i === (N - 3) ? 1 : 10;
       for (let j = 1; j <= count; j++) {
         const item = document.createElement('div');
         item.className = 'nav-item';
@@ -61,20 +62,10 @@
     }
 
     function updatePads() {
-      const topH = Math.min(firstIndex * ITEM_HEIGHT, 100);
-      const bottomH = Math.min((N - 1 - lastIndex) * ITEM_HEIGHT, 100);
-      if (firstIndex > 0) {
-        padTop.style.height = `${topH}px`;
-        if (!padTop.parentNode) scrollPane.prepend(padTop);
-      } else {
-        padTop.remove();
-      }
-      if (lastIndex < N - 1) {
-        padBottom.style.height = `${bottomH}px`;
-        if (!padBottom.parentNode) scrollPane.append(padBottom);
-      } else {
-        padBottom.remove();
-      }
+      const topH = firstIndex > 0 ? Math.min(firstIndex * ITEM_HEIGHT, 100) : 0;
+      const bottomH = lastIndex < N - 1 ? Math.min((N - 1 - lastIndex) * ITEM_HEIGHT, 100) : 0;
+      padTop.style.height = `${topH}px`;
+      padBottom.style.height = `${bottomH}px`;
     }
 
     function render() {
@@ -90,7 +81,7 @@
 
       if (maxVisible < 0) {
         const initLast = Math.min(N - 1, BUFFER * 2);
-        for (let i = 0; i <= initLast; i++) scrollPane.append(createItem(i));
+        for (let i = 0; i <= initLast; i++) scrollPane.insertBefore(createItem(i), padBottom);
         firstIndex = 0;
         lastIndex = initLast;
         updatePads();
@@ -105,9 +96,8 @@
       while (lastIndex > newLast)  { lastItemEl().remove();  lastIndex--;  }
       while (firstIndex < newFirst) { firstItemEl().remove(); firstIndex++; }
 
-      const tailAnchor = padBottom.parentNode ? padBottom : null;
       for (let i = Math.max(lastIndex + 1, newFirst); i <= newLast; i++)
-        scrollPane.insertBefore(createItem(i), tailAnchor);
+        scrollPane.insertBefore(createItem(i), padBottom);
 
       const headAnchor = firstItemEl();
       for (let i = newFirst; i < firstIndex; i++)
