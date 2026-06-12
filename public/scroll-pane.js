@@ -111,8 +111,8 @@ class ScrollPane extends HTMLElement {
 		});
 
 		if (this.#anchor.element?.isConnected) {
-			const { top: currentTop } = this.#anchor.element.getBoundingClientRect();
-			const delta = currentTop - this.#anchor.position;
+			const { top } = this.#anchor.element.getBoundingClientRect();
+			const delta = top - this.#anchor.position;
 			this.#scrollPad(delta);
 			return;
 		}
