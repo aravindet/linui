@@ -18,45 +18,98 @@ const MONTHS = [
 	"December",
 ];
 
+const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
 const style = css`
 	:host {
-		display: inline-flex;
+		display: block;
+		width: 240px;
+		height: 240px;
 		background: #1e1e2e;
 		color: #cdd6f4;
 		font-family: system-ui, sans-serif;
 		border-radius: 8px;
 		overflow: hidden;
-		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+		interpolate-size: allow-keywords;
 	}
 
 	scroll-pane {
-		height: 280px;
+		width: 100%;
+		height: 100%;
 	}
 
-	#pane-year { width: 80px; }
-	#pane-month { width: 130px; }
-	#pane-cal { width: 268px; }
-	#pane-hour { width: 68px; }
-	#pane-minute { width: 68px; }
+	summary {
+		list-style: none;
+	}
 
-	.sep {
-		width: 1px;
+	summary::-webkit-details-marker {
+		display: none;
+	}
+
+	details > summary {
+		height: 40px;
+		display: flex;
+		align-items: center;
+		padding: 0 16px;
+		font-size: 13px;
+		font-weight: 600;
+		color: #cdd6f4;
+		background: #11111b;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	details > summary:hover {
 		background: #313244;
-		align-self: stretch;
 	}
 
-	.weekdays {
-		display: grid;
-		grid-template-columns: repeat(7, 36px);
-		padding: 0 4px;
+	details[open] > summary {
 		position: sticky;
 		top: 0;
-		background: #181825;
 		z-index: 1;
+		color: #cba6f7;
 	}
 
-	.weekdays > span {
-		height: 28px;
+	details details > summary {
+		padding-left: 16px;
+		font-weight: 500;
+		background: #181825;
+	}
+
+	details details[open] > summary {
+		top: 0;
+		z-index: 2;
+	}
+
+	details details details > summary {
+		padding-left: calc(16px + 5ch);
+		font-weight: 400;
+		background: #1e1e2e;
+	}
+
+	details details details[open] > summary {
+		top: 0;
+		z-index: 3;
+		background: none;
+	}
+
+	.cal-month {
+		padding: 4px 8px 8px;
+	}
+
+	.cal-header {
+		display: grid;
+		grid-template-columns: repeat(7, 1fr);
+		margin-bottom: 2px;
+		position: sticky;
+		top: 40px;
+		background: #1e1e2e;
+		z-index: 2;
+	}
+
+	.cal-header > span {
+		height: 26px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -65,74 +118,73 @@ const style = css`
 		color: #585b70;
 	}
 
-	.item {
-		height: 40px;
+	.cal-grid {
+		display: grid;
+		grid-template-columns: repeat(7, 1fr);
+	}
+
+	.day {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		padding: 0 16px;
-		font-size: 13px;
+		aspect-ratio: 1;
+		border-radius: 50%;
+		font-size: 12px;
 		cursor: pointer;
 		user-select: none;
-		white-space: nowrap;
 	}
 
-	.item:hover {
+	.day:hover {
 		background: #313244;
 	}
 
-	.item[data-selected] {
+	.day[data-today] {
+		color: #cba6f7;
+	}
+
+	.day[data-selected] {
 		background: #45475a;
 		color: #cba6f7;
 	}
 
-	.item[data-disabled] {
+	.day[data-disabled] {
 		opacity: 0.3;
 		pointer-events: none;
 	}
 
-	.cal-grid {
-		display: grid;
-		grid-template-columns: repeat(7, 36px);
-		padding: 2px 4px;
+	details::details-content {
+		overflow: clip;
+		height: 0;
+		transition:
+			height 200ms ease,
+			content-visibility 200ms allow-discrete;
 	}
 
-	.cal-grid .item {
-		width: 36px;
-		height: 36px;
-		padding: 0;
-		border-radius: 50%;
-		font-size: 12px;
+	details[open]::details-content {
+		height: auto;
+	}
+
+	:host([data-instant]) details::details-content {
+		transition: none;
 	}
 `;
 
 const template = document.createElement("template");
 template.innerHTML = html`
 	<style>${style}</style>
-	<scroll-pane id="pane-year"></scroll-pane>
-	<div class="sep"></div>
-	<scroll-pane id="pane-month"></scroll-pane>
-	<div class="sep"></div>
-	<scroll-pane id="pane-cal"></scroll-pane>
-	<div class="sep"></div>
-	<scroll-pane id="pane-hour"></scroll-pane>
-	<div class="sep"></div>
-	<scroll-pane id="pane-minute"></scroll-pane>
+	<scroll-pane></scroll-pane>
 `;
 
 class DatetimePicker extends HTMLElement {
-	static observedAttributes = ["min", "max", "step", "value"];
+	static observedAttributes = ["min", "max", "value"];
 
 	#year;
 	#month;
 	#date;
-	#hour;
-	#minute;
 	#minDate = null;
 	#maxDate = null;
-	#step = 60;
-	#panes = {};
-	#weekdays;
+	#pane;
+	#initialized = false;
 
 	constructor() {
 		super();
@@ -140,20 +192,10 @@ class DatetimePicker extends HTMLElement {
 		this.#year = now.getFullYear();
 		this.#month = now.getMonth();
 		this.#date = now.getDate();
-		this.#hour = now.getHours();
-		this.#minute = now.getMinutes();
 
 		this.attachShadow({ mode: "open" });
 		this.shadowRoot.appendChild(template.content.cloneNode(true));
-
-		for (const col of ["year", "month", "cal", "hour", "minute"]) {
-			this.#panes[col] = this.shadowRoot.getElementById(`pane-${col}`);
-		}
-
-		this.#weekdays = document.createElement("div");
-		this.#weekdays.className = "weekdays";
-		this.#weekdays.innerHTML =
-			"<span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>";
+		this.#pane = this.shadowRoot.querySelector("scroll-pane");
 	}
 
 	connectedCallback() {
@@ -166,165 +208,191 @@ class DatetimePicker extends HTMLElement {
 	}
 
 	attributeChangedCallback(name, _, value) {
-		({
-			min: () => (this.#minDate = value ? new Date(value) : null),
-			max: () => (this.#maxDate = value ? new Date(value) : null),
-			step: () => (this.#step = Number(value) || 60),
-			value: () => {
-				const d = new Date(value);
-				if (Number.isNaN(d)) return;
+		if (name === "min") this.#minDate = value ? this.#parseDate(value) : null;
+		else if (name === "max")
+			this.#maxDate = value ? this.#parseDate(value) : null;
+		else if (name === "value") {
+			const d = this.#parseDate(value);
+			if (d) {
 				this.#year = d.getFullYear();
 				this.#month = d.getMonth();
 				this.#date = d.getDate();
-				this.#hour = d.getHours();
-				this.#minute = d.getMinutes();
-			},
-		})[name]?.();
+			}
+		}
 		if (this.isConnected) this.#render();
 	}
 
 	get value() {
-		return new Date(
-			this.#year,
-			this.#month,
-			this.#date,
-			this.#hour,
-			this.#minute,
-		).toISOString();
+		const y = String(this.#year).padStart(4, "0");
+		const m = String(this.#month + 1).padStart(2, "0");
+		const d = String(this.#date).padStart(2, "0");
+		return `${y}-${m}-${d}`;
+	}
+
+	#parseDate(str) {
+		const [y, m, d] = str.split("-").map(Number);
+		return y && m && d ? new Date(y, m - 1, d) : null;
 	}
 
 	#render() {
-		this.#renderYears();
-		this.#renderMonths();
-		this.#renderCalendar();
-		this.#renderHours();
-		this.#renderMinutes();
+		const decadeStart = Math.floor(this.#year / 10) * 10;
+		this.setAttribute("data-instant", "");
+		const decades = [];
+		for (let d = decadeStart - 50; d <= decadeStart + 10; d += 10) {
+			decades.push(this.#renderDecade(d));
+		}
+		this.#pane.replaceChildren(...decades);
+		requestAnimationFrame(() => this.removeAttribute("data-instant"));
+		const behavior = this.#initialized ? "smooth" : "instant";
+		this.#initialized = true;
+		setTimeout(() => this.#scrollToMonth(behavior), 100);
 	}
 
-	#renderYears() {
-		const min = this.#minDate?.getFullYear() ?? this.#year - 50;
-		const max = this.#maxDate?.getFullYear() ?? this.#year + 50;
-		this.#panes.year.replaceChildren(
-			...Array.from({ length: max - min + 1 }, (_, i) => {
-				const y = min + i;
-				return this.#item(String(y), "year", y, y === this.#year, false);
-			}),
-		);
+	#scrollToMonth(behavior = "smooth") {
+		this.#pane
+			.querySelector(`[data-year="${this.#year}"][data-month="${this.#month}"]`)
+			?.scrollIntoView({ behavior, block: "start" });
 	}
 
-	#renderMonths() {
-		this.#panes.month.replaceChildren(
-			...MONTHS.map((name, m) =>
-				this.#item(name, "month", m, m === this.#month, this.#monthDisabled(m)),
-			),
-		);
-	}
+	#renderDecade(decadeStart) {
+		const el = document.createElement("details");
+		el.name = "decades";
+		el.open = this.#year >= decadeStart && this.#year < decadeStart + 10;
 
-	#renderCalendar() {
-		const firstDay = new Date(this.#year, this.#month, 1).getDay();
-		const lastDate = new Date(this.#year, this.#month + 1, 0).getDate();
+		const summary = document.createElement("summary");
+		summary.textContent = `${decadeStart} — ${decadeStart + 10}`;
+		el.appendChild(summary);
 
-		const blanks = Array.from({ length: firstDay }, () =>
-			Object.assign(document.createElement("div"), { className: "item" }),
-		);
-		const dates = Array.from({ length: lastDate }, (_, i) => {
-			const d = i + 1;
-			return this.#item(
-				String(d),
-				"date",
-				d,
-				d === this.#date,
-				this.#dateDisabled(d),
-			);
-		});
+		for (let y = decadeStart; y <= decadeStart + 9; y++) {
+			el.appendChild(this.#renderYear(y));
+		}
 
-		const grid = document.createElement("div");
-		grid.className = "cal-grid";
-		grid.replaceChildren(...blanks, ...dates);
-		this.#panes.cal.replaceChildren(this.#weekdays, grid);
-	}
-
-	#renderHours() {
-		const step = Math.max(1, Math.floor(this.#step / 3600));
-		this.#panes.hour.replaceChildren(
-			...Array.from({ length: Math.ceil(24 / step) }, (_, i) => {
-				const h = i * step;
-				return this.#item(
-					String(h).padStart(2, "0"),
-					"hour",
-					h,
-					h === this.#hour,
-					false,
-				);
-			}),
-		);
-	}
-
-	#renderMinutes() {
-		const step = Math.max(1, Math.round(this.#step / 60));
-		const count = Math.min(60, Math.ceil(60 / step));
-		this.#panes.minute.replaceChildren(
-			...Array.from({ length: count }, (_, i) => {
-				const m = (i * step) % 60;
-				return this.#item(
-					String(m).padStart(2, "0"),
-					"minute",
-					m,
-					m === this.#minute,
-					false,
-				);
-			}),
-		);
-	}
-
-	#item(label, col, val, selected, disabled) {
-		const el = document.createElement("div");
-		el.className = "item";
-		el.textContent = label;
-		el.dataset.col = col;
-		el.dataset.val = val;
-		el.dataset.key = val;
-		if (selected) el.dataset.selected = "";
-		if (disabled) el.dataset.disabled = "";
 		return el;
 	}
 
+	#renderYear(year) {
+		const el = document.createElement("details");
+		el.dataset.year = year;
+		el.name = `decade-${Math.floor(year / 10) * 10}`;
+		el.open = year === this.#year;
+
+		const summary = document.createElement("summary");
+		summary.textContent = String(year);
+		el.appendChild(summary);
+
+		for (let m = 0; m < 12; m++) {
+			el.appendChild(this.#renderMonth(year, m));
+		}
+
+		return el;
+	}
+
+	#renderMonth(year, month) {
+		const el = document.createElement("details");
+		el.dataset.year = year;
+		el.dataset.month = month;
+		el.name = `year-${year}`;
+		el.open = year === this.#year && month === this.#month;
+
+		const summary = document.createElement("summary");
+		summary.textContent = MONTHS[month];
+		el.appendChild(summary);
+
+		el.appendChild(this.#renderCalendar(year, month));
+		return el;
+	}
+
+	#renderCalendar(year, month) {
+		const today = new Date();
+		const firstDay = new Date(year, month, 1).getDay();
+		const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+		const header = document.createElement("div");
+		header.className = "cal-header";
+		for (const label of WEEKDAYS) {
+			const span = document.createElement("span");
+			span.textContent = label;
+			header.appendChild(span);
+		}
+
+		const grid = document.createElement("div");
+		grid.className = "cal-grid";
+
+		for (let i = 0; i < firstDay; i++) {
+			grid.appendChild(document.createElement("div"));
+		}
+
+		for (let d = 1; d <= daysInMonth; d++) {
+			const cell = document.createElement("div");
+			cell.className = "day";
+			cell.textContent = String(d);
+			cell.dataset.year = year;
+			cell.dataset.month = month;
+			cell.dataset.day = d;
+			if (
+				year === today.getFullYear() &&
+				month === today.getMonth() &&
+				d === today.getDate()
+			) {
+				cell.dataset.today = "";
+			}
+			if (year === this.#year && month === this.#month && d === this.#date) {
+				cell.dataset.selected = "";
+			}
+			if (this.#dayDisabled(year, month, d)) {
+				cell.dataset.disabled = "";
+			}
+			grid.appendChild(cell);
+		}
+
+		const wrap = document.createElement("div");
+		wrap.className = "cal-month";
+		wrap.appendChild(header);
+		wrap.appendChild(grid);
+		return wrap;
+	}
+
+	#dayDisabled(year, month, day) {
+		const date = new Date(year, month, day);
+		return (
+			(this.#minDate !== null && date < this.#minDate) ||
+			(this.#maxDate !== null && date > this.#maxDate)
+		);
+	}
+
 	#onClick = (e) => {
-		const item = e.composedPath().find((el) => el.dataset?.col);
-		if (!item || "disabled" in item.dataset) return;
+		const path = e.composedPath();
 
-		({
-			year: () => (this.#year = +item.dataset.val),
-			month: () => (this.#month = +item.dataset.val),
-			date: () => (this.#date = +item.dataset.val),
-			hour: () => (this.#hour = +item.dataset.val),
-			minute: () => (this.#minute = +item.dataset.val),
-		})[item.dataset.col]?.();
-
-		this.#date = Math.min(
-			this.#date,
-			new Date(this.#year, this.#month + 1, 0).getDate(),
+		const day = path.find(
+			(el) => el instanceof HTMLElement && el.dataset.day != null,
 		);
-		this.#render();
-		this.dispatchEvent(new Event("change", { bubbles: true }));
+		if (day) {
+			if ("disabled" in day.dataset) return;
+			this.#year = +day.dataset.year;
+			this.#month = +day.dataset.month;
+			this.#date = +day.dataset.day;
+			this.#render();
+			this.dispatchEvent(new Event("change", { bubbles: true }));
+			return;
+		}
+
+		const monthSummary = path.find(
+			(el) =>
+				el instanceof HTMLElement &&
+				el.tagName === "SUMMARY" &&
+				el.parentElement?.dataset.month != null,
+		);
+		if (monthSummary && !monthSummary.parentElement.open) {
+			setTimeout(
+				() =>
+					monthSummary.parentElement.scrollIntoView({
+						behavior: "smooth",
+						block: "start",
+					}),
+				100,
+			);
+		}
 	};
-
-	#monthDisabled(m) {
-		const first = new Date(this.#year, m, 1);
-		const last = new Date(this.#year, m + 1, 0);
-		return (
-			(this.#minDate != null && last < this.#minDate) ||
-			(this.#maxDate != null && first > this.#maxDate)
-		);
-	}
-
-	#dateDisabled(d) {
-		const date = new Date(this.#year, this.#month, d);
-		return (
-			(this.#minDate != null && date < this.#minDate) ||
-			(this.#maxDate != null && date > this.#maxDate)
-		);
-	}
 }
 
 customElements.define("datetime-picker", DatetimePicker);
