@@ -63,6 +63,29 @@ contentStyle.paddingTop = `${nextPadTop}px`;
 - Event handler methods are arrow-function class fields so they bind without `.bind(this)`.
 - Use noop `html` and `css` tagged template literals at the top of each module for editor syntax highlighting.
 
+## scroll-pane
+
+`<scroll-pane>` is a Web Component that wraps slotted children in a scrollable container and fires `visibleChildrenChange` events to drive virtual list rendering.
+
+When slotted children are added or removed, or when they resize, the container scrolls to minimize layout shifts.
+
+### Public API
+
+- **`visibleChildren`** — iterator of slotted elements currently intersecting the scroll container.
+- **`visibleChildrenChange`** event — fired (debounce-free) whenever the visible set changes; consumer calls `render()` in response.
+
+### `#anchor`
+
+An anchor is the slotted element or its descendent that the user is interacting with using the mouse, and its viewport-top position at the time of interaction. It’s null if the use isn’t interacting with any particular child element. The anchor is frozen during periods of active layout shift.
+
+### `#onResize()`
+
+`#onResize` (a `ResizeObserver` callback) runs when any slotted element is added, removed or if its size changes, calling `#scrollPad()` to compensate for any layout shifts. If an anchor element exists, it computes the scroll amount that compensates for its viewport-relative layout shift; otherwise it computes the scroll amount that eliminates content-relative layout shift for the largest possible subset of visible slotted children.
+
+### Scroll padding
+
+Layout-shift compensation can scroll beyond the edges by adding `padding-top`/`padding-bottom` to the inner `.scroll-content` wrapper div.
+
 ## CSS
 
 - One declaration per line, tab-indented.
