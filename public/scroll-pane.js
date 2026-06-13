@@ -168,6 +168,22 @@ class ScrollPane extends HTMLElement {
 		return this.#visibleChildren.keys();
 	}
 
+	get viewHeight() {
+		return this.#container.clientHeight;
+	}
+
+	get viewTop() {
+		return this.#container.scrollTop - this.#padTop;
+	}
+
+	get viewBottom() {
+		return this.viewTop + this.viewHeight;
+	}
+
+	get contentHeight() {
+		return this.#container.scrollHeight - this.#padTop - this.#padBottom;
+	}
+
 	#setAnchor(element, override = false) {
 		if (this.#anchorFreeze && !override) {
 			this.#nextAnchor = element;
@@ -208,17 +224,13 @@ class ScrollPane extends HTMLElement {
 	};
 
 	#scrollPad = (delta = 0) => {
-		const { scrollTop, clientHeight, scrollHeight } = this.#container;
+		const { scrollTop, scrollHeight } = this.#container;
 		// If scrolled to the bottom, suppress scroll up.
-		const atBottom = scrollTop + clientHeight > scrollHeight - 0.5;
+		const atBottom = scrollTop + this.viewHeight > scrollHeight - 0.5;
 
 		const contentStyle = this.#content.style;
-		const conHeight = scrollHeight - this.#padTop - this.#padBottom;
-
-		const viewTop = scrollTop - this.#padTop;
-		const viewBottom = viewTop + clientHeight;
-		const contentAbove = viewTop + delta;
-		const contentBelow = conHeight - viewBottom - delta;
+		const contentAbove = this.viewTop + delta;
+		const contentBelow = this.contentHeight - this.viewBottom - delta;
 
 		this.#padTop = Math.max(0, -contentAbove);
 		this.#padBottom = Math.max(0, -contentBelow);
