@@ -94,6 +94,12 @@ const style = css`
 		background: none;
 	}
 
+	details details details[open] {
+		scroll-snap-stop: always;
+		scroll-snap-align: start;
+	}
+
+
 	.cal-month {
 		padding: 4px 8px 8px;
 	}

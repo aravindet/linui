@@ -14,6 +14,7 @@ const style = css`
 		inset: 0;
 		overflow: auto;
 		overflow-anchor: none;
+		scroll-snap-type: y proximity;
 	}
 `;
 template.innerHTML = html`
