@@ -111,7 +111,7 @@ const style = css`
 		position: sticky;
 		top: 40px;
 		background: #1e1e2e;
-		z-index: 2;
+		z-index: 0;
 	}
 
 	.cal-header > span {
